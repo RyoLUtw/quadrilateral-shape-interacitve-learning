@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <!-- This meta tag is key for mobile responsiveness -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interactive Quadrilateral Shapes – Responsive & Touch Friendly</title>
+  <style>
+    body { font-family: sans-serif; padding: 10px; }
+    #definitions { margin-bottom: 20px; }
+    .definition { margin: 5px 0; padding: 5px; }
+    .highlight { background-color: yellow; }
+    #controls { text-align: center; margin-bottom: 10px; }
+    #challenge { margin-bottom: 10px; font-size: 20px; text-align: center; }
+    #message { font-size: 18px; color: green; text-align: center; }
+    canvas {
+      /* The canvas has a fixed internal resolution of 600x600,
+         but the CSS makes it scale responsively */
+      width: 100%;
+      height: auto;
+      max-width: 600px;
+      display: block;
+      margin: 0 auto;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+    }
+    @media (max-width: 480px) {
+      button {
+        padding: 8px 16px;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="toggleChallenge">Toggle Challenge Mode</button>
+    <button id="resetChallenge" style="display: none;">New Challenge</button>
+  </div>
+  <div id="challenge" style="display:none;"></div>
+  <div id="definitions">
+    <div id="parallelogramDef" class="definition">Parallelogram: Opposite sides are parallel and equal.</div>
+    <div id="rectangleDef" class="definition">Rectangle: A parallelogram with right angles.</div>
+    <div id="rhombusDef" class="definition">Rhombus: A parallelogram with all sides equal.</div>
+    <div id="squareDef" class="definition">Square: A rectangle and rhombus combined (all sides and angles equal).</div>
+    <div id="trapezoidDef" class="definition">Trapezoid: Only one pair of parallel sides.</div>
+  </div>
+  <!-- The canvas internal resolution remains 600x600 -->
+  <canvas id="canvas" width="600" height="600"></canvas>
+  <div id="message"></div>
+
+  <script>
+    // === Global Variables & Setup ===
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const gridSize = 20;
+    let vertices = [
+      {x: 100, y: 100},
+      {x: 300, y: 100},
+      {x: 300, y: 300},
+      {x: 100, y: 300}
+    ];
+    let draggingIndex = null;
+    let offset = {x: 0, y: 0};
+    let challengeMode = false;
+    let currentChallenge = null;
+    const challengeDisplay = document.getElementById('challenge');
+    const messageDisplay = document.getElementById('message');
+    const toggleChallengeBtn = document.getElementById('toggleChallenge');
+    const resetChallengeBtn = document.getElementById('resetChallenge');
+
+    const defElems = {
+      parallelogram: document.getElementById('parallelogramDef'),
+      rectangle: document.getElementById('rectangleDef'),
+      rhombus: document.getElementById('rhombusDef'),
+      square: document.getElementById('squareDef'),
+      trapezoid: document.getElementById('trapezoidDef')
+    };
+
+    // === Utility Functions ===
+    function snap(value) {
+      return Math.round(value / gridSize) * gridSize;
+    }
+
+    function distance(p1, p2) {
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#eee';
+      for (let x = 0; x <= canvas.width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= canvas.height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+    }
+
+    function getOrderedVertices() {
+      // Order the vertices clockwise using the centroid.
+      let cx = vertices.reduce((sum, p) => sum + p.x, 0) / vertices.length;
+      let cy = vertices.reduce((sum, p) => sum + p.y, 0) / vertices.length;
+      return vertices.slice().sort((a, b) => {
+        return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
+      });
+    }
+
+    // === Vector Operations ===
+    function vector(a, b) {
+      return { x: b.x - a.x, y: b.y - a.y };
+    }
+    function dot(u, v) {
+      return u.x * v.x + u.y * v.y;
+    }
+    function cross(u, v) {
+      return u.x * v.y - u.y * v.x;
+    }
+    function length(v) {
+      return Math.hypot(v.x, v.y);
+    }
+
+    // === Shape Detection Functions ===
+    const tol = 5; // tolerance in pixels
+
+    function isParallelogram(pts) {
+      let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
+      let AB = vector(A, B), BC = vector(B, C), CD = vector(C, D), DA = vector(D, A);
+      let parallel1 = Math.abs(cross(AB, CD)) < tol;
+      let equal1 = Math.abs(length(AB) - length(CD)) < tol;
+      let parallel2 = Math.abs(cross(BC, DA)) < tol;
+      let equal2 = Math.abs(length(BC) - length(DA)) < tol;
+      return parallel1 && parallel2 && equal1 && equal2;
+    }
+
+    function isRectangle(pts) {
+      if (!isParallelogram(pts)) return false;
+      let A = pts[0], B = pts[1], C = pts[2];
+      let AB = vector(A, B), BC = vector(B, C);
+      return Math.abs(dot(AB, BC)) < tol;
+    }
+
+    function isRhombus(pts) {
+      if (!isParallelogram(pts)) return false;
+      let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
+      let d1 = length(vector(A, B));
+      let d2 = length(vector(B, C));
+      let d3 = length(vector(C, D));
+      let d4 = length(vector(D, A));
+      return Math.abs(d1 - d2) < tol && Math.abs(d2 - d3) < tol && Math.abs(d3 - d4) < tol;
+    }
+
+    function isSquare(pts) {
+      return isRectangle(pts) && isRhombus(pts);
+    }
+
+    function isTrapezoid(pts) {
+      let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
+      let AB = vector(A, B), BC = vector(B, C), CD = vector(C, D), DA = vector(D, A);
+      let parallel1 = Math.abs(cross(AB, CD)) < tol;
+      let parallel2 = Math.abs(cross(BC, DA)) < tol;
+      return (parallel1 ^ parallel2) && !(parallel1 && parallel2);
+    }
+
+    // === Drawing the Shape and Highlights ===
+    function drawShape() {
+      let pts = getOrderedVertices();
+
+      // Begin drawing the quadrilateral
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.closePath();
+
+      // Determine the shape type (if any)
+      let shapeType = null;
+      if (isSquare(pts)) shapeType = 'square';
+      else if (isRectangle(pts)) shapeType = 'rectangle';
+      else if (isRhombus(pts)) shapeType = 'rhombus';
+      else if (isParallelogram(pts)) shapeType = 'parallelogram';
+      else if (isTrapezoid(pts)) shapeType = 'trapezoid';
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#ddd';
+
+      if (challengeMode && currentChallenge) {
+        if (shapeType === currentChallenge) {
+          ctx.fillStyle = 'lightgreen';
+          messageDisplay.textContent = "Success! You formed a " + currentChallenge;
+        } else {
+          messageDisplay.textContent = "";
+        }
+      } else {
+        if (shapeType) {
+          const colorMap = {
+            parallelogram: 'lightblue',
+            rectangle: 'lightgreen',
+            rhombus: 'plum',
+            square: 'orange',
+            trapezoid: 'salmon'
+          };
+          ctx.fillStyle = colorMap[shapeType];
+          // Highlight the corresponding definition
+          for (let key in defElems) {
+            if (key === shapeType) defElems[key].classList.add('highlight');
+            else defElems[key].classList.remove('highlight');
+          }
+        } else {
+          for (let key in defElems) {
+            defElems[key].classList.remove('highlight');
+          }
+        }
+      }
+
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw draggable vertices.
+      for (let p of vertices) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.strokeStyle = '#333';
+        ctx.stroke();
+      }
+
+      // For example, if the shape is a rectangle, highlight the right angle (vertex B).
+      if (!challengeMode && shapeType === 'rectangle') {
+        ctx.beginPath();
+        ctx.arc(pts[1].x, pts[1].y, 12, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+
+    function redraw() {
+      drawGrid();
+      drawShape();
+    }
+
+    // === Helper: Convert event coordinates to canvas coordinates accounting for CSS scaling ===
+    function getCanvasCoordinates(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    }
+
+    // === Mouse Event Handlers for Dragging ===
+    canvas.addEventListener('mousedown', (e) => {
+      const pos = getCanvasCoordinates(e.clientX, e.clientY);
+      for (let i = 0; i < vertices.length; i++) {
+        if (distance(pos, vertices[i]) < 10) {
+          draggingIndex = i;
+          offset.x = vertices[i].x - pos.x;
+          offset.y = vertices[i].y - pos.y;
+          break;
+        }
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (draggingIndex !== null) {
+        const pos = getCanvasCoordinates(e.clientX, e.clientY);
+        vertices[draggingIndex].x = snap(pos.x + offset.x);
+        vertices[draggingIndex].y = snap(pos.y + offset.y);
+        redraw();
+      }
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      draggingIndex = null;
+    });
+    canvas.addEventListener('mouseleave', () => {
+      draggingIndex = null;
+    });
+
+    // === Touch Event Handlers for Dragging ===
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const pos = getCanvasCoordinates(touch.clientX, touch.clientY);
+      for (let i = 0; i < vertices.length; i++) {
+        if (distance(pos, vertices[i]) < 10) {
+          draggingIndex = i;
+          offset.x = vertices[i].x - pos.x;
+          offset.y = vertices[i].y - pos.y;
+          break;
+        }
+      }
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (draggingIndex !== null) {
+        const touch = e.touches[0];
+        const pos = getCanvasCoordinates(touch.clientX, touch.clientY);
+        vertices[draggingIndex].x = snap(pos.x + offset.x);
+        vertices[draggingIndex].y = snap(pos.y + offset.y);
+        redraw();
+      }
+    });
+
+    canvas.addEventListener('touchend', () => {
+      draggingIndex = null;
+    });
+
+    // === Challenge Mode Controls ===
+    toggleChallengeBtn.addEventListener('click', () => {
+      challengeMode = !challengeMode;
+      if (challengeMode) {
+        challengeDisplay.style.display = 'block';
+        document.getElementById('definitions').style.display = 'none';
+        resetChallengeBtn.style.display = 'inline';
+        setNewChallenge();
+      } else {
+        challengeDisplay.style.display = 'none';
+        document.getElementById('definitions').style.display = 'block';
+        resetChallengeBtn.style.display = 'none';
+        messageDisplay.textContent = "";
+      }
+      redraw();
+    });
+
+    resetChallengeBtn.addEventListener('click', () => {
+      setNewChallenge();
+      messageDisplay.textContent = "";
+      redraw();
+    });
+
+    function setNewChallenge() {
+      const shapes = ['parallelogram', 'rectangle', 'rhombus', 'square', 'trapezoid'];
+      currentChallenge = shapes[Math.floor(Math.random() * shapes.length)];
+      challengeDisplay.textContent = "Challenge: Form a " + currentChallenge;
+    }
+
+    // === Responsive Handling ===
+    function resizeCanvas() {
+      // The internal resolution remains 600x600,
+      // and CSS scales the canvas responsively.
+      redraw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // === Initial Draw ===
+    redraw();
+  </script>
+</body>
+</html>
