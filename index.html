@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <!-- This meta tag is key for mobile responsiveness -->
+  <!-- For mobile responsiveness -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Interactive Quadrilateral Shapes – Responsive & Touch Friendly</title>
   <style>
@@ -13,9 +13,9 @@
     #controls { text-align: center; margin-bottom: 10px; }
     #challenge { margin-bottom: 10px; font-size: 20px; text-align: center; }
     #message { font-size: 18px; color: green; text-align: center; }
+    #stats { font-size: 16px; text-align: center; margin-top: 10px; }
     canvas {
-      /* The canvas has a fixed internal resolution of 600x600,
-         but the CSS makes it scale responsively */
+      /* The internal canvas resolution remains 600×600, but CSS scales it responsively */
       width: 100%;
       height: auto;
       max-width: 600px;
@@ -29,10 +29,7 @@
       margin: 5px;
     }
     @media (max-width: 480px) {
-      button {
-        padding: 8px 16px;
-        font-size: 14px;
-      }
+      button { padding: 8px 16px; font-size: 14px; }
     }
   </style>
 </head>
@@ -40,6 +37,7 @@
   <div id="controls">
     <button id="toggleChallenge">Toggle Challenge Mode</button>
     <button id="resetChallenge" style="display: none;">New Challenge</button>
+    <button id="checkShape" style="display: none;">Check Shape</button>
   </div>
   <div id="challenge" style="display:none;"></div>
   <div id="definitions">
@@ -49,9 +47,9 @@
     <div id="squareDef" class="definition">Square: A rectangle and rhombus combined (all sides and angles equal).</div>
     <div id="trapezoidDef" class="definition">Trapezoid: Only one pair of parallel sides.</div>
   </div>
-  <!-- The canvas internal resolution remains 600x600 -->
   <canvas id="canvas" width="600" height="600"></canvas>
   <div id="message"></div>
+  <div id="stats" style="display:none;"></div>
 
   <script>
     // === Global Variables & Setup ===
@@ -68,10 +66,15 @@
     let offset = {x: 0, y: 0};
     let challengeMode = false;
     let currentChallenge = null;
+    // In challenge mode, these flags determine if the user has pressed "Check" and if the shape was correct.
+    let challengeChecked = false;
+    let challengeCorrect = false;
     const challengeDisplay = document.getElementById('challenge');
     const messageDisplay = document.getElementById('message');
+    const statsDisplay = document.getElementById('stats');
     const toggleChallengeBtn = document.getElementById('toggleChallenge');
     const resetChallengeBtn = document.getElementById('resetChallenge');
+    const checkShapeBtn = document.getElementById('checkShape');
 
     const defElems = {
       parallelogram: document.getElementById('parallelogramDef'),
@@ -81,15 +84,24 @@
       trapezoid: document.getElementById('trapezoidDef')
     };
 
+    // Challenge statistics
+    let totalTries = 0;
+    let totalCorrect = 0;
+    let shapeStats = {
+      parallelogram: { correct: 0, wrong: 0 },
+      rectangle: { correct: 0, wrong: 0 },
+      rhombus: { correct: 0, wrong: 0 },
+      square: { correct: 0, wrong: 0 },
+      trapezoid: { correct: 0, wrong: 0 }
+    };
+
     // === Utility Functions ===
     function snap(value) {
       return Math.round(value / gridSize) * gridSize;
     }
-
     function distance(p1, p2) {
       return Math.hypot(p1.x - p2.x, p1.y - p2.y);
     }
-
     function drawGrid() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.strokeStyle = '#eee';
@@ -106,7 +118,6 @@
         ctx.stroke();
       }
     }
-
     function getOrderedVertices() {
       // Order the vertices clockwise using the centroid.
       let cx = vertices.reduce((sum, p) => sum + p.x, 0) / vertices.length;
@@ -117,22 +128,13 @@
     }
 
     // === Vector Operations ===
-    function vector(a, b) {
-      return { x: b.x - a.x, y: b.y - a.y };
-    }
-    function dot(u, v) {
-      return u.x * v.x + u.y * v.y;
-    }
-    function cross(u, v) {
-      return u.x * v.y - u.y * v.x;
-    }
-    function length(v) {
-      return Math.hypot(v.x, v.y);
-    }
+    function vector(a, b) { return { x: b.x - a.x, y: b.y - a.y }; }
+    function dot(u, v) { return u.x * v.x + u.y * v.y; }
+    function cross(u, v) { return u.x * v.y - u.y * v.x; }
+    function length(v) { return Math.hypot(v.x, v.y); }
 
     // === Shape Detection Functions ===
     const tol = 5; // tolerance in pixels
-
     function isParallelogram(pts) {
       let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
       let AB = vector(A, B), BC = vector(B, C), CD = vector(C, D), DA = vector(D, A);
@@ -142,14 +144,12 @@
       let equal2 = Math.abs(length(BC) - length(DA)) < tol;
       return parallel1 && parallel2 && equal1 && equal2;
     }
-
     function isRectangle(pts) {
       if (!isParallelogram(pts)) return false;
       let A = pts[0], B = pts[1], C = pts[2];
       let AB = vector(A, B), BC = vector(B, C);
-      return Math.abs(dot(AB, BC)) < tol;
+      return Math.abs(dot(AB, BC)) < tol * 10;
     }
-
     function isRhombus(pts) {
       if (!isParallelogram(pts)) return false;
       let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
@@ -159,11 +159,7 @@
       let d4 = length(vector(D, A));
       return Math.abs(d1 - d2) < tol && Math.abs(d2 - d3) < tol && Math.abs(d3 - d4) < tol;
     }
-
-    function isSquare(pts) {
-      return isRectangle(pts) && isRhombus(pts);
-    }
-
+    function isSquare(pts) { return isRectangle(pts) && isRhombus(pts); }
     function isTrapezoid(pts) {
       let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
       let AB = vector(A, B), BC = vector(B, C), CD = vector(C, D), DA = vector(D, A);
@@ -172,19 +168,63 @@
       return (parallel1 ^ parallel2) && !(parallel1 && parallel2);
     }
 
+    // === Highlighting Helper Functions ===
+    function highlightSide(p1, p2, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    function highlightRightAngle(vertex, pt1, pt2, color) {
+      const len = 15;
+      const v1 = { x: pt1.x - vertex.x, y: pt1.y - vertex.y };
+      const v2 = { x: pt2.x - vertex.x, y: pt2.y - vertex.y };
+      const mag1 = Math.hypot(v1.x, v1.y);
+      const mag2 = Math.hypot(v2.x, v2.y);
+      const u1 = { x: v1.x / mag1, y: v1.y / mag1 };
+      const u2 = { x: v2.x / mag2, y: v2.y / mag2 };
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(vertex.x, vertex.y);
+      ctx.lineTo(vertex.x + u1.x * len, vertex.y + u1.y * len);
+      ctx.moveTo(vertex.x, vertex.y);
+      ctx.lineTo(vertex.x + u2.x * len, vertex.y + u2.y * len);
+      ctx.stroke();
+      ctx.restore();
+    }
+    function highlightTickMark(p1, p2, color) {
+      const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const mag = Math.hypot(dx, dy);
+      const perp = { x: -dy / mag, y: dx / mag };
+      const tickLen = 5;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(mid.x - perp.x * tickLen, mid.y - perp.y * tickLen);
+      ctx.lineTo(mid.x + perp.x * tickLen, mid.y + perp.y * tickLen);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // === Drawing the Shape and Highlights ===
     function drawShape() {
       let pts = getOrderedVertices();
 
-      // Begin drawing the quadrilateral
+      // Draw the quadrilateral (fill and outline)
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i].x, pts[i].y);
-      }
+      for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
       ctx.closePath();
 
-      // Determine the shape type (if any)
+      // Determine shape type based on the vertices.
       let shapeType = null;
       if (isSquare(pts)) shapeType = 'square';
       else if (isRectangle(pts)) shapeType = 'rectangle';
@@ -192,18 +232,13 @@
       else if (isParallelogram(pts)) shapeType = 'parallelogram';
       else if (isTrapezoid(pts)) shapeType = 'trapezoid';
 
+      // Default drawing style.
       ctx.lineWidth = 2;
       ctx.strokeStyle = '#000';
       ctx.fillStyle = '#ddd';
 
-      if (challengeMode && currentChallenge) {
-        if (shapeType === currentChallenge) {
-          ctx.fillStyle = 'lightgreen';
-          messageDisplay.textContent = "Success! You formed a " + currentChallenge;
-        } else {
-          messageDisplay.textContent = "";
-        }
-      } else {
+      // In normal mode—or in challenge mode after a correct check—change the fill color and highlight the matching definition.
+      if (!challengeMode || (challengeMode && challengeChecked && challengeCorrect)) {
         if (shapeType) {
           const colorMap = {
             parallelogram: 'lightblue',
@@ -213,22 +248,22 @@
             trapezoid: 'salmon'
           };
           ctx.fillStyle = colorMap[shapeType];
-          // Highlight the corresponding definition
+          // Highlight the corresponding definition.
           for (let key in defElems) {
-            if (key === shapeType) defElems[key].classList.add('highlight');
-            else defElems[key].classList.remove('highlight');
+            defElems[key].classList.toggle('highlight', key === shapeType);
           }
         } else {
-          for (let key in defElems) {
-            defElems[key].classList.remove('highlight');
-          }
+          for (let key in defElems) { defElems[key].classList.remove('highlight'); }
         }
+      } else {
+        // In challenge mode before checking, leave definitions unhighlighted.
+        for (let key in defElems) { defElems[key].classList.remove('highlight'); }
       }
 
       ctx.fill();
       ctx.stroke();
 
-      // Draw draggable vertices.
+      // Draw the draggable vertices.
       for (let p of vertices) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
@@ -238,22 +273,57 @@
         ctx.stroke();
       }
 
-      // For example, if the shape is a rectangle, highlight the right angle (vertex B).
-      if (!challengeMode && shapeType === 'rectangle') {
-        ctx.beginPath();
-        ctx.arc(pts[1].x, pts[1].y, 12, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+      // Draw characteristic highlights only in normal mode or in challenge mode after a correct check.
+      if (!challengeMode || (challengeMode && challengeChecked && challengeCorrect)) {
+        let A = pts[0], B = pts[1], C = pts[2], D = pts[3];
+        if (shapeType === 'rectangle' || shapeType === 'square') {
+          // Mark each right angle with two short red segments.
+          for (let i = 0; i < 4; i++) {
+            let prev = pts[(i + 3) % 4],
+                curr = pts[i],
+                next = pts[(i + 1) % 4];
+            let v1 = vector(curr, prev),
+                v2 = vector(curr, next);
+            if (Math.abs(dot(v1, v2)) < tol * 10) {
+              highlightRightAngle(curr, prev, next, "red");
+            }
+          }
+        }
+        if (shapeType === 'rhombus' || shapeType === 'square') {
+          // Mark each side with a green tick to denote equal lengths.
+          highlightTickMark(A, B, "green");
+          highlightTickMark(B, C, "green");
+          highlightTickMark(C, D, "green");
+          highlightTickMark(D, A, "green");
+        }
+        if (shapeType === 'parallelogram' &&
+            shapeType !== 'rectangle' && shapeType !== 'rhombus' && shapeType !== 'square') {
+          // For a plain parallelogram, highlight both pairs of opposite (parallel) sides in blue.
+          highlightSide(A, B, "blue");
+          highlightSide(B, C, "blue");
+          highlightSide(C, D, "blue");
+          highlightSide(D, A, "blue");
+        }
+        if (shapeType === 'trapezoid') {
+          // For a trapezoid, identify which pair of opposite sides is parallel and highlight them in purple.
+          let AB_CD_parallel = (Math.abs(cross(vector(A, B), vector(C, D))) < tol);
+          let BC_DA_parallel = (Math.abs(cross(vector(B, C), vector(D, A))) < tol);
+          if (AB_CD_parallel) {
+            highlightSide(A, B, "purple");
+            highlightSide(C, D, "purple");
+          } else if (BC_DA_parallel) {
+            highlightSide(B, C, "purple");
+            highlightSide(D, A, "purple");
+          }
+        }
       }
     }
-
     function redraw() {
       drawGrid();
       drawShape();
     }
 
-    // === Helper: Convert event coordinates to canvas coordinates accounting for CSS scaling ===
+    // === Helper: Convert client (mouse or touch) coordinates to canvas coordinates (accounting for CSS scaling) ===
     function getCanvasCoordinates(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
@@ -276,7 +346,6 @@
         }
       }
     });
-
     canvas.addEventListener('mousemove', (e) => {
       if (draggingIndex !== null) {
         const pos = getCanvasCoordinates(e.clientX, e.clientY);
@@ -285,13 +354,8 @@
         redraw();
       }
     });
-
-    canvas.addEventListener('mouseup', () => {
-      draggingIndex = null;
-    });
-    canvas.addEventListener('mouseleave', () => {
-      draggingIndex = null;
-    });
+    canvas.addEventListener('mouseup', () => { draggingIndex = null; });
+    canvas.addEventListener('mouseleave', () => { draggingIndex = null; });
 
     // === Touch Event Handlers for Dragging ===
     canvas.addEventListener('touchstart', (e) => {
@@ -307,7 +371,6 @@
         }
       }
     });
-
     canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
       if (draggingIndex !== null) {
@@ -318,46 +381,81 @@
         redraw();
       }
     });
+    canvas.addEventListener('touchend', () => { draggingIndex = null; });
 
-    canvas.addEventListener('touchend', () => {
-      draggingIndex = null;
-    });
-
-    // === Challenge Mode Controls ===
+    // === Challenge Mode Controls & Stats ===
     toggleChallengeBtn.addEventListener('click', () => {
       challengeMode = !challengeMode;
+      challengeChecked = false;
+      challengeCorrect = false;
       if (challengeMode) {
         challengeDisplay.style.display = 'block';
         document.getElementById('definitions').style.display = 'none';
         resetChallengeBtn.style.display = 'inline';
+        checkShapeBtn.style.display = 'inline';
+        statsDisplay.style.display = 'block';
         setNewChallenge();
       } else {
         challengeDisplay.style.display = 'none';
         document.getElementById('definitions').style.display = 'block';
         resetChallengeBtn.style.display = 'none';
+        checkShapeBtn.style.display = 'none';
+        statsDisplay.style.display = 'none';
         messageDisplay.textContent = "";
       }
       redraw();
     });
-
     resetChallengeBtn.addEventListener('click', () => {
       setNewChallenge();
+      challengeChecked = false;
+      challengeCorrect = false;
       messageDisplay.textContent = "";
       redraw();
     });
+    checkShapeBtn.addEventListener('click', () => { checkChallenge(); });
 
     function setNewChallenge() {
       const shapes = ['parallelogram', 'rectangle', 'rhombus', 'square', 'trapezoid'];
       currentChallenge = shapes[Math.floor(Math.random() * shapes.length)];
       challengeDisplay.textContent = "Challenge: Form a " + currentChallenge;
     }
+    function checkChallenge() {
+      let pts = getOrderedVertices();
+      let shapeType = null;
+      if (isSquare(pts)) shapeType = 'square';
+      else if (isRectangle(pts)) shapeType = 'rectangle';
+      else if (isRhombus(pts)) shapeType = 'rhombus';
+      else if (isParallelogram(pts)) shapeType = 'parallelogram';
+      else if (isTrapezoid(pts)) shapeType = 'trapezoid';
 
-    // === Responsive Handling ===
-    function resizeCanvas() {
-      // The internal resolution remains 600x600,
-      // and CSS scales the canvas responsively.
+      totalTries++;
+      if (shapeType === currentChallenge) {
+        challengeCorrect = true;
+        messageDisplay.textContent = "Correct! You formed a " + currentChallenge;
+        totalCorrect++;
+        shapeStats[currentChallenge].correct++;
+      } else {
+        challengeCorrect = false;
+        messageDisplay.textContent = "Incorrect. You formed " + (shapeType ? shapeType : "an unknown shape");
+        shapeStats[currentChallenge].wrong++;
+      }
+      challengeChecked = true;
+      updateStats();
       redraw();
     }
+    function updateStats() {
+      let overallAccuracy = totalTries ? ((totalCorrect / totalTries) * 100).toFixed(2) : 0;
+      let statsHTML = "<strong>Overall Accuracy:</strong> " + overallAccuracy + "%<br>";
+      statsHTML += "<strong>Total Attempts:</strong> " + totalTries + "<br>";
+      statsHTML += "<strong>Shape Stats:</strong><br>";
+      for (let shape in shapeStats) {
+        statsHTML += shape + ": " + shapeStats[shape].correct + " correct, " + shapeStats[shape].wrong + " wrong<br>";
+      }
+      statsDisplay.innerHTML = statsHTML;
+    }
+
+    // === Responsive Handling ===
+    function resizeCanvas() { redraw(); }
     window.addEventListener('resize', resizeCanvas);
 
     // === Initial Draw ===
