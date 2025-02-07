@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <!-- For mobile responsiveness -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Interactive Quadrilateral Shapes – Responsive & Touch Friendly</title>
+  <title>Interactive Quadrilateral Shapes – Responsive, Touch Friendly & Adjustable</title>
   <style>
     body { font-family: sans-serif; padding: 10px; }
     #definitions { margin-bottom: 20px; }
     .definition { margin: 5px 0; padding: 5px; }
     .highlight { background-color: yellow; }
-    #controls { text-align: center; margin-bottom: 10px; }
+    #controls, #gridControls, #vertexControls { text-align: center; margin-bottom: 10px; }
     #challenge { margin-bottom: 10px; font-size: 20px; text-align: center; }
     #message { font-size: 18px; color: green; text-align: center; }
     #stats { font-size: 16px; text-align: center; margin-top: 10px; }
@@ -39,6 +39,21 @@
     <button id="resetChallenge" style="display: none;">New Challenge</button>
     <button id="checkShape" style="display: none;">Check Shape</button>
   </div>
+  
+  <!-- Controls to adjust grid spacing -->
+  <div id="gridControls">
+    <button id="decreaseGrid">- Grid Size</button>
+    <span id="gridSizeDisplay">Grid: 20</span>
+    <button id="increaseGrid">+ Grid Size</button>
+  </div>
+  
+  <!-- Controls to adjust vertex size -->
+  <div id="vertexControls">
+    <button id="decreaseVertex">- Vertex Size</button>
+    <span id="vertexSizeDisplay">Vertex: 8</span>
+    <button id="increaseVertex">+ Vertex Size</button>
+  </div>
+  
   <div id="challenge" style="display:none;"></div>
   <div id="definitions">
     <div id="parallelogramDef" class="definition">Parallelogram: Opposite sides are parallel and equal.</div>
@@ -55,27 +70,42 @@
     // === Global Variables & Setup ===
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const gridSize = 20;
+    
+    // "gridSize" controls the spacing of grid lines and is also used for snapping.
+    let gridSize = 40;
+    // "vertexSize" controls the radius of the draggable vertex handles.
+    let vertexSize = 20;
+    
     let vertices = [
-      {x: 100, y: 100},
-      {x: 300, y: 100},
-      {x: 300, y: 300},
-      {x: 100, y: 300}
+      {x: 120, y: 120},
+      {x: 320, y: 120},
+      {x: 320, y: 320},
+      {x: 120, y: 320}
     ];
     let draggingIndex = null;
     let offset = {x: 0, y: 0};
     let challengeMode = false;
     let currentChallenge = null;
-    // In challenge mode, these flags determine if the user has pressed "Check" and if the shape was correct.
+    // In challenge mode, these flags indicate whether a check has been made and if it was correct.
     let challengeChecked = false;
     let challengeCorrect = false;
+    
     const challengeDisplay = document.getElementById('challenge');
     const messageDisplay = document.getElementById('message');
     const statsDisplay = document.getElementById('stats');
     const toggleChallengeBtn = document.getElementById('toggleChallenge');
     const resetChallengeBtn = document.getElementById('resetChallenge');
     const checkShapeBtn = document.getElementById('checkShape');
-
+    
+    // New controls for grid and vertex sizes.
+    const decreaseGridBtn = document.getElementById('decreaseGrid');
+    const increaseGridBtn = document.getElementById('increaseGrid');
+    const gridSizeDisplay = document.getElementById('gridSizeDisplay');
+    
+    const decreaseVertexBtn = document.getElementById('decreaseVertex');
+    const increaseVertexBtn = document.getElementById('increaseVertex');
+    const vertexSizeDisplay = document.getElementById('vertexSizeDisplay');
+    
     const defElems = {
       parallelogram: document.getElementById('parallelogramDef'),
       rectangle: document.getElementById('rectangleDef'),
@@ -263,10 +293,10 @@
       ctx.fill();
       ctx.stroke();
 
-      // Draw the draggable vertices.
+      // Draw the draggable vertices (using the adjustable vertexSize).
       for (let p of vertices) {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+        ctx.arc(p.x, p.y, vertexSize, 0, 2 * Math.PI);
         ctx.fillStyle = 'white';
         ctx.fill();
         ctx.strokeStyle = '#333';
@@ -337,8 +367,9 @@
     // === Mouse Event Handlers for Dragging ===
     canvas.addEventListener('mousedown', (e) => {
       const pos = getCanvasCoordinates(e.clientX, e.clientY);
+      // Use (vertexSize + 2) as the hit threshold.
       for (let i = 0; i < vertices.length; i++) {
-        if (distance(pos, vertices[i]) < 10) {
+        if (distance(pos, vertices[i]) < vertexSize + 2) {
           draggingIndex = i;
           offset.x = vertices[i].x - pos.x;
           offset.y = vertices[i].y - pos.y;
@@ -363,7 +394,7 @@
       const touch = e.touches[0];
       const pos = getCanvasCoordinates(touch.clientX, touch.clientY);
       for (let i = 0; i < vertices.length; i++) {
-        if (distance(pos, vertices[i]) < 10) {
+        if (distance(pos, vertices[i]) < vertexSize + 2) {
           draggingIndex = i;
           offset.x = vertices[i].x - pos.x;
           offset.y = vertices[i].y - pos.y;
@@ -453,6 +484,28 @@
       }
       statsDisplay.innerHTML = statsHTML;
     }
+
+    // === Grid and Vertex Size Control Handlers ===
+    increaseGridBtn.addEventListener('click', () => {
+      if (gridSize < 40) { gridSize += 5; }
+      gridSizeDisplay.textContent = "Grid: " + gridSize;
+      redraw();
+    });
+    decreaseGridBtn.addEventListener('click', () => {
+      if (gridSize > 5) { gridSize -= 5; }
+      gridSizeDisplay.textContent = "Grid: " + gridSize;
+      redraw();
+    });
+    increaseVertexBtn.addEventListener('click', () => {
+      if (vertexSize < 20) { vertexSize += 2; }
+      vertexSizeDisplay.textContent = "Vertex: " + vertexSize;
+      redraw();
+    });
+    decreaseVertexBtn.addEventListener('click', () => {
+      if (vertexSize > 5) { vertexSize -= 2; }
+      vertexSizeDisplay.textContent = "Vertex: " + vertexSize;
+      redraw();
+    });
 
     // === Responsive Handling ===
     function resizeCanvas() { redraw(); }
